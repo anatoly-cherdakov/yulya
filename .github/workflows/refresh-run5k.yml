@@ -1,0 +1,32 @@
+name: "Обновление результатов: Юлия Лукина"
+on:
+  schedule:
+    - cron: '7,22,37,52 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: refresh-run5k-yulya
+  cancel-in-progress: false
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Получить результаты Юлия Лукина
+        run: python scripts/fetch_run5k.py
+      - name: Сохранить результаты
+        run: |
+          if git diff --quiet -- run5k-results.json && git ls-files --error-unmatch run5k-results.json >/dev/null 2>&1; then
+            echo "Новых данных нет"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add run5k-results.json
+          git commit -m "Update yulya run5k results"
+          git push
