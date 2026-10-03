@@ -2,6 +2,21 @@
 
 <html lang="ru">
 <head>
+<style id="RUN5K_INITIAL_COUNTS">
+html.run5k-count-pending .grid .num,
+html.run5k-count-pending .year-picture .year-caption span,
+html.run5k-count-pending .geo-summary-item b,
+html.run5k-count-pending .geo-summary-item small,
+html.run5k-count-pending .geo-bottom-countries{visibility:hidden}
+</style>
+<script>
+document.documentElement.classList.add('run5k-count-pending');
+// Keep existing values available if another script fails before initialization.
+window.run5kCountFallback=setTimeout(function(){
+  document.documentElement.classList.remove('run5k-count-pending');
+},15000);
+</script>
+
 <meta charset="utf-8"/>
 <meta content="strict-origin-when-cross-origin" name="referrer"/>
 <meta content="width=device-width,initial-scale=1" name="viewport"/>
@@ -2872,7 +2887,10 @@ window.addEventListener('DOMContentLoaded',function(){
   }
   function boot(){
     apply(readStored());updateStats();
-    loadLatest('saved').then(data=>{apply(data.runs);save();}).catch(error=>console.warn('run5k saved:',error));
+    loadLatest('saved').then(data=>{apply(data.runs);save();}).catch(error=>console.warn('run5k saved:',error)).finally(()=>{
+      clearTimeout(window.run5kCountFallback);
+      document.documentElement.classList.remove('run5k-count-pending');
+    });
     button.addEventListener('click',async()=>{
       if(button.disabled)return;
       button.disabled=true;status.textContent='Проверяю результаты…';
