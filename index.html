@@ -2718,6 +2718,7 @@ window.addEventListener('DOMContentLoaded',function(){
 (function () {
   'use strict';
   const PROFILE = 'yulya';
+  const WORKER='https://snowy-hill-e211.anatoly-cherdakov.workers.dev/';
   const KEY = 'run5k:yulya:added:v2';
   const button = document.getElementById('refresh-results');
   const status = document.getElementById('refresh-status');
@@ -2726,7 +2727,7 @@ window.addEventListener('DOMContentLoaded',function(){
   const panels = () => Array.from(document.querySelectorAll('.panel[id^="y"]'));
   const rows = () => panels().flatMap(p => Array.from(p.querySelectorAll('tbody tr')));
   const dateKey = d => d.slice(6) + d.slice(3,5) + d.slice(0,2);
-  const key = r => [r.date, r.place, r.city, r.system].join('|');
+  const key = r => [r.date, r.place, r.system].join('|');
   const fromRow = tr => ({date:norm(tr.cells[1].textContent), place:norm(tr.cells[2].textContent), city:norm(tr.cells[3].textContent), system:norm(tr.cells[4].textContent)});
   const baseline = rows().map(fromRow);
   const cutoff = baseline.map(r => dateKey(r.date)).sort().at(-1);
@@ -2744,7 +2745,7 @@ window.addEventListener('DOMContentLoaded',function(){
     if (!raw || typeof raw !== 'object') return null;
     const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw.event_date || '');
     if (!m || !systems[raw.platform_code] || !/^\d{2}:\d{2}:\d{2}$/.test(raw.finish_time_display || '')) return null;
-    const place = norm(raw.location_name), city = norm(raw.location_city), nation = country(norm(raw.location_country));
+    const place = norm(raw.location_name), city = norm(raw.location_city)||'—', nation = country(norm(raw.location_country));
     if (!place || !city) return null;
     let displayCity = nation === 'Россия' ? city : city + ', ' + nation;
     // Keep the existing names and country order for previously visited places.
@@ -2788,6 +2789,7 @@ window.addEventListener('DOMContentLoaded',function(){
     ['',r.date,r.place,r.city,r.system,r.time].forEach((value,i)=>{
       if(i===4 && templates.has(r.system)) {tr.appendChild(templates.get(r.system).cloneNode(true));return;}
       const td=tr.insertCell();
+      if(i===4){const pill=document.createElement('span');pill.className='distance-pill system-pill system-'+({'parkrun':'parkrun','С95':'s95','5 вёрст':'5verst','RunPark':'runpark'}[r.system]||'');pill.textContent=value;td.appendChild(pill);return;}
       if(i===5){const b=document.createElement('b');b.textContent=value;td.appendChild(b);}else td.textContent=value;
     });
     const next=Array.from(body.rows).find(row=>dateKey(norm(row.cells[1].textContent))>dateKey(r.date));
@@ -2854,31 +2856,23 @@ window.addEventListener('DOMContentLoaded',function(){
     }
   }
   window.updateRunStatsAndGeo=updateStats;
-  function repoFromLocation(){
-    if(!location.hostname.endsWith('.github.io'))return null;
-    const owner=location.hostname.slice(0,-'.github.io'.length), repo=location.pathname.split('/').filter(Boolean)[0];
-    return repo && !repo.endsWith('.html') ? owner+'/'+decodeURIComponent(repo) : owner+'/'+location.hostname;
-  }
-  async function fetchJSON(url,headers){
-    const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),20000);
-    try{const response=await fetch(url,{cache:'no-store',credentials:'omit',signal:controller.signal,headers:headers||{}});if(!response.ok)throw Error('HTTP '+response.status);return await response.json();}
-    finally{clearTimeout(timer);}
-  }
-  function validate(data){
-    if(!data || data.profile!==PROFILE || !Array.isArray(data.runs))throw Error('Неверный профиль или формат результатов');
-    return data;
-  }
-  async function loadLatest(){
-    const inferred=repoFromLocation();
-    let repo=inferred,local;
-    if(!repo){local=validate(await fetchJSON(new URL('run5k-results.json',location.href)));repo=local.repository;}
-    if(!repo)return local;
-    if(!/^[\w.-]+\/[\w.-]+$/.test(repo))throw Error('Неверное имя репозитория');
-    const data=await fetchJSON('https://api.github.com/repos/'+repo+'/contents/run5k-results.json',{Accept:'application/vnd.github.raw+json'});
-    return validate(data);
+  async function loadLatest(action='refresh'){
+    const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),action==='saved'?10000:60000);
+    try{
+      const url=new URL(WORKER);url.searchParams.set('profile',PROFILE);url.searchParams.set('action',action);url.searchParams.set('_cb',Date.now());
+      const response=await fetch(url,{cache:'no-store',credentials:'omit',signal:controller.signal});
+      if(!response.ok){
+        if(response.status===400)throw Error('Обновите код Worker в Cloudflare: профиль Юли ещё не подключён.');
+        throw Error('HTTP '+response.status);
+      }
+      const data=await response.json();
+      if(data.profile!==PROFILE||!Array.isArray(data.runs))throw Error('Неверный профиль или формат результатов');
+      return data;
+    }finally{clearTimeout(timer)}
   }
   function boot(){
     apply(readStored());updateStats();
+    loadLatest('saved').then(data=>{apply(data.runs);save();}).catch(error=>console.warn('run5k saved:',error));
     button.addEventListener('click',async()=>{
       if(button.disabled)return;
       button.disabled=true;status.textContent='Проверяю результаты…';
@@ -2887,7 +2881,7 @@ window.addEventListener('DOMContentLoaded',function(){
         const persisted=save();
         status.textContent=count?'Добавлено результатов: '+count:'Новых результатов нет';
         if(count&&!persisted)status.textContent+=' — браузер не разрешил сохранить их после перезагрузки.';
-      }catch(error){status.textContent='Не удалось проверить результаты. Попробуйте позже.';console.error('run5k refresh:',error);}
+      }catch(error){status.textContent=error.message.includes('Cloudflare')?error.message:'Не удалось проверить результаты. Попробуйте позже.';console.error('run5k refresh:',error);}
       finally{button.disabled=false;}
     });
   }
